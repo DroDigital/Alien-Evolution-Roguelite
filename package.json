@@ -1,0 +1,30 @@
+{
+  "name": "alien-evolution-roguelite",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build && node scripts/copy-credits.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DroDigital/Alien-Evolution-Roguelite.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/DroDigital/Alien-Evolution-Roguelite/issues"
+  },
+  "homepage": "https://github.com/DroDigital/Alien-Evolution-Roguelite#readme",
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5"
+  },
+  "private": true
+}
