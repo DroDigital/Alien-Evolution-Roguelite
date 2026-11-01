@@ -1,13 +1,14 @@
 import './style.css';
 import { Game, STAGES } from './game.js';
 import { Renderer } from './render.js';
+import { updateTutorial, dismissTutorial, showTutorial } from './tutorial.js';
 
 const $ = id => document.getElementById(id);
 const SAVE_KEY = 'origin-feast-save-v1';
 const RECORD_KEY = 'origin-feast-record-v1';
 let game, renderer, paused = true, started = false, last = 0, saveClock = 0, audioContext;
-let pointerDown = false, lastPointerX = 0, toastTimer, previousPadButtons = [];
-let lastSound = 0;
+let pointerDown = false, lastPointerX = 0, lastPointerY = 0, toastTimer, previousPadButtons = [];
+let lastSound = 0, transitionTimer;
 const keys = new Set();
 const overlays = ['start-screen','mutation-screen','pause-screen','end-screen'];
 const show = id => { for (const name of overlays) $(name).hidden = name !== id; };
@@ -68,7 +69,19 @@ function endRun(victory, data = {}) {
 }
 function event(type, data) {
   if (type === 'mutation') { presentMutations(data.choices); save(); }
-  else if (type === 'stage') { toast(`SCALE ${game.state.stage + 1} · ${STAGES[game.state.stage].name || STAGES[game.state.stage].title || 'A new world'}`); sound('stage'); save(); }
+  else if (type === 'stage') {
+    const stage = STAGES[game.state.stage];
+    toast(`SCALE ${game.state.stage + 1} · ${stage.name}`);
+    if (!$('reduce-motion').checked) {
+      $('transition-scale').textContent = `SCALE ${String(game.state.stage + 1).padStart(2, '0')} / 08`;
+      $('transition-title').textContent = stage.name;
+      $('transition-setting').textContent = stage.setting;
+      const transition = $('stage-transition'); transition.classList.remove('is-active'); void transition.offsetWidth;
+      transition.classList.add('is-active'); clearTimeout(transitionTimer);
+      transitionTimer = setTimeout(() => transition.classList.remove('is-active'), 2200);
+    }
+    sound('stage'); save();
+  }
   else if (type === 'message') toast(typeof data === 'string' ? data : data?.text || '');
   else if (type === 'death') endRun(false, data);
   else if (type === 'victory') endRun(true, data);
@@ -83,7 +96,12 @@ function start(saved = null) {
     if (options?.length) presentMutations(options);
     else { game.state.mode = 'playing'; toast('Choose your next mutation at the next milestone.'); }
   }
-  renderer.update(game.state, 0); save();
+  updateTutorial(game.state); renderer.update(game.state, 0); save();
+}
+function toggleTutorial() {
+  if (!game) return;
+  if ($('tutorial').hidden) showTutorial(game.state); else dismissTutorial(game.state);
+  save();
 }
 function togglePause() {
   if (!started || !game || ['dead','victory','mutation'].includes(game.state.mode)) return;
@@ -121,8 +139,8 @@ function gamepadMenu() {
 function gamepadInput() {
   const pad = navigator.getGamepads?.()[0]; if (!pad) return null;
   const dead = v => Math.abs(v || 0) < .18 ? 0 : v;
-  if (!paused && Math.abs(dead(pad.axes[2])) > 0) renderer.yaw -= dead(pad.axes[2]) * .045;
-  return {x:dead(pad.axes[0]), z:dead(pad.axes[1]), attack:!!pad.buttons[0]?.pressed, feed:!!pad.buttons[2]?.pressed, dodge:!!pad.buttons[1]?.pressed, ability:!!pad.buttons[3]?.pressed, sense:!!pad.buttons[4]?.pressed};
+  if (!paused) { renderer.yaw -= dead(pad.axes[2]) * .045; renderer.pitch = Math.max(.24, Math.min(1.15, renderer.pitch + dead(pad.axes[3]) * .035)); }
+  return {x:dead(pad.axes[0]), z:dead(pad.axes[1]), y:(pad.buttons[5]?.value || 0) - (pad.buttons[7]?.value || 0), attack:!!pad.buttons[0]?.pressed, feed:!!pad.buttons[2]?.pressed, dodge:!!pad.buttons[1]?.pressed, ability:!!pad.buttons[3]?.pressed, sense:!!pad.buttons[4]?.pressed};
 }
 function input() {
   const pad = gamepadInput() || {};
@@ -130,13 +148,13 @@ function input() {
   let z = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0) + (pad.z || 0);
   const len = Math.hypot(x,z); if (len > 1) { x /= len; z /= len; }
   const yaw = renderer.yaw || 0, cos = Math.cos(yaw), sin = Math.sin(yaw);
-  return {x:x*cos + z*sin, z:-x*sin + z*cos, attack:keys.has('Space') || pad.attack, feed:keys.has('KeyE') || pad.feed, dodge:keys.has('ShiftLeft') || keys.has('ShiftRight') || pad.dodge, ability:keys.has('KeyQ') || pad.ability, sense:keys.has('Tab') || pad.sense};
+  return {x:x*cos + z*sin, z:-x*sin + z*cos, y:Math.max(-1, Math.min(1, (keys.has('KeyR') ? 1 : 0) - (keys.has('KeyF') ? 1 : 0) + (pad.y || 0))), attack:keys.has('Space') || pad.attack, feed:keys.has('KeyE') || pad.feed, dodge:keys.has('ShiftLeft') || keys.has('ShiftRight') || pad.dodge, ability:keys.has('KeyQ') || pad.ability, sense:keys.has('Tab') || pad.sense};
 }
 function frame(now) {
   const dt = Math.min(.05, (now - (last || now)) / 1000); last = now;
   gamepadMenu();
   if (started && game) {
-    if (!paused) { const controls = input(); game.update(dt, controls); if (now - lastSound > 450 && (controls.feed || controls.attack)) { sound(controls.feed ? 'feed' : 'attack'); lastSound = now; } saveClock += dt; if (saveClock > 5) { save(); saveClock = 0; } }
+    if (!paused) { const controls = input(); game.update(dt, controls); updateTutorial(game.state, controls); if (now - lastSound > 450 && (controls.feed || controls.attack)) { sound(controls.feed ? 'feed' : 'attack'); lastSound = now; } saveClock += dt; if (saveClock > 5) { save(); saveClock = 0; } }
     renderer.update(game.state, dt); updateHUD();
   }
   requestAnimationFrame(frame);
@@ -152,17 +170,21 @@ try {
   $('reduce-motion').addEventListener('change', e => { renderer.reducedMotion = e.target.checked; });
   $('help').addEventListener('click', () => { $('help-panel').hidden = false; });
   $('close-help').addEventListener('click', () => { $('help-panel').hidden = true; });
+  $('toggle-tutorial').addEventListener('click', toggleTutorial);
+  $('dismiss-tutorial').addEventListener('click', () => { if (game) { dismissTutorial(game.state); save(); } });
+  $('show-tutorial').addEventListener('click', () => { if (game) { showTutorial(game.state); $('help-panel').hidden = true; save(); } });
   window.addEventListener('keydown', e => {
     if (started && !paused && ['Space','Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
     if (e.code === 'Escape' && !e.repeat) togglePause();
+    if (e.code === 'KeyH' && !paused && !e.repeat) toggleTutorial();
     keys.add(e.code);
   });
   window.addEventListener('keyup', e => keys.delete(e.code));
   window.addEventListener('blur', () => { if (started && !paused) togglePause(); keys.clear(); });
   window.addEventListener('pagehide', save);
   const canvas = $('game');
-  canvas.addEventListener('pointerdown', e => { pointerDown = true; lastPointerX = e.clientX; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerdown', e => { pointerDown = true; lastPointerX = e.clientX; lastPointerY = e.clientY; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener('pointerup', () => pointerDown = false);
-  canvas.addEventListener('pointermove', e => { if (pointerDown) { const sensitivity = Number($('camera-sensitivity')?.value || 75) / 75; renderer.yaw -= (e.clientX-lastPointerX) * .005 * sensitivity; lastPointerX = e.clientX; } });
+  canvas.addEventListener('pointermove', e => { if (pointerDown) { const sensitivity = Number($('camera-sensitivity')?.value || 75) / 75; renderer.yaw -= (e.clientX-lastPointerX) * .005 * sensitivity; renderer.pitch = Math.max(.24, Math.min(1.15, renderer.pitch + (e.clientY-lastPointerY) * .005 * sensitivity)); lastPointerX = e.clientX; lastPointerY = e.clientY; } });
   show('start-screen'); requestAnimationFrame(frame);
 } catch (error) { console.error(error); document.body.insertAdjacentHTML('beforeend', '<p class="fatal-error">Unable to start the 3D renderer. Please use a browser with WebGL enabled.</p>'); }

@@ -9,7 +9,7 @@ function seededGame(seed) {
   game.makeStage();
   return game;
 }
-const dist = (a,b) => Math.hypot(a.x-b.x,a.z-b.z);
+const dist = (a,b) => Math.hypot(a.x-b.x,(a.y||0)-(b.y||0),a.z-b.z);
 const tick = (game, input={}, count=1) => { for (let i=0;i<count;i++) game.update(.05,input); };
 
 // A simple controller, issuing the same move/attack/feed/evade actions as a
@@ -33,15 +33,15 @@ function playToVictory(seed) {
       target=living.find(e=>e.type==='boss');
     }
     if (!target) continue;
-    const d=dist(p,target), dx=(target.x-p.x)/(d||1), dz=(target.z-p.z)/(d||1);
+    const d=dist(p,target), dx=(target.x-p.x)/(d||1), dy=((target.y||0)-(p.y||0))/(d||1), dz=(target.z-p.z)/(d||1);
     const combat=['enemy','ranged','boss','anchor'].includes(target.type);
     const stop=combat ? target.radius+1.6 : target.radius+1.4;
     const danger=living.find(e=>['enemy','ranged','boss'].includes(e.type) && e.phase==='windup' && e.timer<.22 && dist(p,e)<(e.type==='ranged'?10:e.type==='boss'?6:3.4)+e.radius);
     // Dodge away from an imminent attack. The game provides invulnerability,
     // so even a crowded encounter is navigable without health manipulation.
-    let x=d>stop?dx:0, z=d>stop?dz:0;
+    let x=d>stop?dx:0, y=d>stop?dy:0, z=d>stop?dz:0;
     if(danger && p.dodgeCooldown<=0){ const dd=dist(p,danger)||1;x=(p.x-danger.x)/dd;z=(p.z-danger.z)/dd; }
-    tick(g,{x,z,attack:true,feed:true,ability:true,dodge:!!danger});
+    tick(g,{x,y,z,attack:true,feed:true,ability:true,dodge:!!danger});
   }
   return {g,visited};
 }
@@ -156,4 +156,98 @@ test('edge containment anchors remain reachable and encounter cannot be bypassed
   g.chooseMutation('carapace');
   tick(g,{feed:true},10);
   assert.equal(s.stage,5);
+});
+
+test('vertical movement changes feeding and attack reach and remains within bounds',()=>{
+  const g=seededGame(13), s=g.state, p=s.player;
+  s.entities=[]; p.x=0; p.z=0; p.y=0;
+  const food=g.entity('foodA',0,0,{y:8,value:5});
+  const enemy=g.entity('enemy',1,0,{y:8,hp:28,maxHp:28,phase:'recovery',timer:99});
+  tick(g,{feed:true,attack:true});
+  assert.equal(food.dead,false,'food above should be out of reach');
+  assert.equal(enemy.hp,28,'enemy above should be out of reach');
+  tick(g,{y:1},40);
+  assert.ok(p.y>7 && p.y<=9);
+  tick(g,{feed:true,attack:true},12);
+  assert.equal(food.consumed,true);
+  assert.ok(enemy.hp<28);
+  tick(g,{y:1},100);
+  assert.equal(p.y,9);
+  tick(g,{y:-1},100);
+  assert.equal(p.y,0);
+});
+
+test('pre-height saves migrate to ground level without losing progress',()=>{
+  const original=seededGame(14).state;
+  original.player.traits.push('jaws'); original.biomass=12;
+  const legacy=JSON.parse(JSON.stringify(original));
+  delete legacy.player.y;
+  for(const entity of legacy.entities) delete entity.y;
+  const restored=new Game(legacy);
+  assert.equal(restored.state.player.y,0);
+  assert.ok(restored.state.entities.every(e=>e.y===0));
+  assert.deepEqual(restored.state.player.traits,['jaws']);
+  assert.equal(restored.state.biomass,12);
+  tick(restored,{y:1},10);
+  assert.ok(restored.state.player.y>0);
+  const resumed=new Game(JSON.parse(JSON.stringify(restored.state)));
+  assert.equal(resumed.state.player.y,restored.state.player.y);
+});
+
+test('both early stages permit a player to feed at each seeded elevation',()=>{
+  for(const seed of [1,42,8675309]) for(const stage of [0,1]) {
+    const g=seededGame(seed),s=g.state;
+    s.stage=stage;g.makeStage();
+    const foods=s.entities.filter(e=>e.type==='foodA'||e.type==='foodB');
+    assert.ok(foods.some(e=>e.y>3));
+    s.entities=[...foods];
+    for(const food of foods) {
+      for(let i=0;i<600 && !food.consumed;i++) {
+        if(s.mode==='mutation') {g.chooseMutation('carapace');continue;}
+        const p=s.player,d=dist(p,food)||1;
+        tick(g,{x:(food.x-p.x)/d,y:(food.y-p.y)/d,z:(food.z-p.z)/d,feed:true});
+      }
+      assert.equal(food.consumed,true,`seed ${seed}, stage ${stage}, food height ${food.y}`);
+    }
+  }
+});
+
+test('nutrient pods break into both foods when attacked',()=>{
+  const g=seededGame(5),s=g.state,p=s.player;
+  s.entities=[];p.x=0;p.y=1.5;p.z=0;
+  const pod=g.entity('bloom',1,0,{y:1.5,hp:13,maxHp:13,radius:1.1});
+  tick(g,{attack:true});
+  assert.equal(pod.dead,true);
+  assert.ok(s.entities.some(e=>e.type==='foodA'&&!e.dead));
+  assert.ok(s.entities.some(e=>e.type==='foodB'&&!e.dead));
+});
+
+test('ranged attacks lock their target, so movement avoids the marked strike',()=>{
+  function scenario(move) {
+    const g=seededGame(6),s=g.state,p=s.player;
+    s.entities=[];p.x=0;p.y=0;p.z=0;
+    const e=g.entity('ranged',7,0,{timer:0,phase:'idle',radius:1,hp:23,maxHp:23});
+    tick(g);
+    assert.equal(e.phase,'windup');
+    assert.equal(e.aimX,0);assert.equal(e.aimZ,0);
+    tick(g,move?{z:1}:{},30);
+    return p.health;
+  }
+  assert.equal(scenario(true),100);
+  assert.equal(scenario(false),93);
+});
+
+test('early melee commits to a charge and guardian takes extra damage during recovery',()=>{
+  const g=seededGame(7),s=g.state,p=s.player;
+  s.entities=[];p.x=0;p.y=0;p.z=0;
+  const enemy=g.entity('enemy',3,0,{timer:0,phase:'idle',radius:1.25,hp:28,maxHp:28});
+  tick(g);
+  assert.equal(enemy.phase,'windup');
+  tick(g,{},25);
+  assert.equal(enemy.phase,'charge');
+  tick(g,{},15);
+  assert.equal(enemy.phase,'recovery');
+  const boss=g.entity('boss',10,0,{hp:100,maxHp:100,radius:2.7,phase:'idle'});
+  g.hit(boss,10); assert.equal(boss.hp,90);
+  boss.phase='recovery';g.hit(boss,10); assert.equal(boss.hp,75);
 });
