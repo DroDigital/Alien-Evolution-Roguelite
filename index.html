@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07191c">
+  <meta name="description" content="An alien organism's journey from a drop of ocean to the edge of everything.">
+  <title>Origin: The Feast</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <canvas id="game" aria-label="Game world"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <main id="hud" class="hud" hidden aria-label="Game status">
+    <header class="hud-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span> ORIGIN <span class="brand-light">/ THE FEAST</span></div>
+      <div class="hud-actions"><button id="help" class="icon-button" aria-label="Show controls" title="Controls">?</button><button id="pause-button" class="icon-button" aria-label="Pause game" title="Pause">Ⅱ</button></div>
+    </header>
+    <section class="stage-panel" aria-live="polite">
+      <div class="eyebrow"><span class="pulse-dot"></span> <span id="stage-number">SCALE 01 / 08</span></div>
+      <h1 id="stage-title">The Arrival</h1>
+      <p id="stage-description">A world in a single drop.</p>
+    </section>
+    <section class="objective-panel" aria-label="Current objective">
+      <div class="section-label"><span class="diamond">◆</span> CURRENT OBJECTIVE</div>
+      <p id="objective">Find and consume nearby life.</p>
+      <div id="status" class="objective-status">The ocean is unaware of your arrival.</div>
+    </section>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <section id="help-panel" class="help-panel" hidden aria-label="Controls">
+      <div class="section-label">FIELD GUIDE <button id="close-help" class="text-button" aria-label="Close controls">CLOSE ×</button></div>
+      <div class="help-grid"><span>Move</span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Attack</span><kbd>SPACE</kbd><span>Feed</span><kbd>E</kbd><span>Evade</span><kbd>SHIFT</kbd><span>Ability</span><kbd>Q</kbd><span>Sense</span><kbd>TAB</kbd><span>Pause</span><kbd>ESC</kbd><span>Look</span><kbd>DRAG</kbd></div>
+      <p>Feed on small life or defeated enemies to grow. Watch for attack warnings and evade before they strike. Drag the view to look around. Gamepad: left stick move, right stick look, A attack, X feed, B evade, Y pulse, LB sense, Start pause.</p>
+    </section>
+    <footer class="hud-footer">
+      <div class="organism-status">
+        <div class="meter-row"><span class="meter-label"><span class="meter-symbol">✳</span> VITALITY</span><span id="health-text" class="meter-value">100 / 100</span></div>
+        <div class="meter health-meter"><div id="health-fill" class="meter-fill"></div></div>
+        <div class="meter-row biomass-row"><span class="meter-label"><span class="meter-symbol">◈</span> BIOMASS</span><span id="biomass-text" class="meter-value">0 / 100</span></div>
+        <div class="meter biomass-meter"><div id="biomass-fill" class="meter-fill"></div></div>
+      </div>
+      <div class="footer-center"><div class="organism-caption">ONE ORGANISM <span>·</span> INFINITE APPETITE</div><div id="hud-traits" class="trait-list">UNEVOLVED</div></div>
+      <div class="quick-controls"><div><kbd>SPACE</kbd> ATTACK <kbd>E</kbd> FEED <kbd>SHIFT</kbd> EVADE</div><div><kbd>TAB</kbd> SENSE <kbd>Q</kbd> ABILITY <kbd>ESC</kbd> PAUSE</div></div>
+    </footer>
+  </main>
+
+  <section id="start-screen" class="overlay start-screen" aria-labelledby="game-title">
+    <div class="start-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit-core"></div><span class="art-cross cross-one">+</span><span class="art-cross cross-two">+</span><span class="art-coordinate">SPECIMEN 001<br>ORIGIN UNKNOWN</span></div>
+    <div class="start-top"><div class="brand"><span class="brand-mark">◈</span> ORIGIN <span class="brand-light">/ THE FEAST</span></div><div class="top-note">A SINGLE-PLAYER EVOLUTION JOURNEY</div></div>
+    <div class="start-content">
+      <div class="eyebrow"><span class="pulse-dot"></span> A LIFE WITHOUT LIMIT</div>
+      <h1 id="game-title">From a drop<br>to <em>everything.</em></h1>
+      <p class="start-description">An unknown life falls into Earth's ocean. Hunt, adapt, and become the creature the universe fears.</p>
+      <div class="start-actions"><button id="start-button" class="primary-button">BEGIN A NEW LIFE <span>↗</span></button><button id="resume-button" class="secondary-button" hidden>CONTINUE JOURNEY <span>→</span></button></div>
+      <p class="start-hint">WASD TO MOVE &nbsp;·&nbsp; SPACE TO ATTACK &nbsp;·&nbsp; E TO FEED</p>
+    </div>
+    <div class="start-bottom"><span>01 — THE ARRIVAL</span><span>AN ORGANISM. AN OCEAN. AN APPETITE.</span><span>◈</span></div>
+  </section>
+
+  <section id="mutation-screen" class="overlay modal-overlay" aria-labelledby="mutation-title" hidden>
+    <div class="modal mutation-modal"><div class="eyebrow"><span class="pulse-dot"></span> ADAPTATION AVAILABLE</div><h2 id="mutation-title">Become something <em>more.</em></h2><p class="modal-intro">What you consume becomes part of you. Choose one adaptation to carry into the next scale.</p><div id="mutation-options" class="mutation-options"></div><div class="modal-foot">YOUR CHOICES REMAIN WITH YOU <span>◈</span></div></div>
+  </section>
+
+  <section id="pause-screen" class="overlay modal-overlay" aria-labelledby="pause-title" hidden>
+    <div class="modal pause-modal"><div class="eyebrow"><span class="pulse-dot"></span> JOURNEY PAUSED</div><h2 id="pause-title">Take a <em>breath.</em></h2><p class="modal-intro">Your progress is saved on this device.</p><div class="settings"><label for="audio-volume">Audio <input id="audio-volume" type="range" min="0" max="100" value="70"></label><label for="camera-sensitivity">Camera sensitivity <input id="camera-sensitivity" type="range" min="25" max="150" value="75"></label><label class="check-label"><input id="reduce-motion" type="checkbox"> Reduce motion</label></div><div class="modal-actions"><button id="resume-game" class="primary-button">RETURN TO THE OCEAN <span>→</span></button><button id="restart-button" class="secondary-button">START A NEW LIFE</button></div><p class="pause-controls">WASD move · Space attack · E feed · Shift evade · Tab sense · Q ability</p></div>
+  </section>
+
+  <section id="end-screen" class="overlay modal-overlay" aria-labelledby="end-title" hidden>
+    <div class="modal end-modal"><div class="eyebrow"><span class="pulse-dot"></span> JOURNEY COMPLETE</div><h2 id="end-title">The universe<br>remembers <em>you.</em></h2><div id="end-copy" class="modal-intro"></div><button id="play-again" class="primary-button">BEGIN AGAIN <span>↗</span></button><div class="modal-foot">EVERY END IS AN ORIGIN <span>◈</span></div></div>
+  </section>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
