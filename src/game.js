@@ -3,11 +3,14 @@
  * World positions are deliberately local to each stage; progression lives in
  * the serializable state, not in astronomical floating point coordinates.
  *
- * Input: {x,z,attack,feed,dodge,sense,ability}; directions are world-relative.
+ * Input: {x,y,z,attack,feed,dodge,sense,ability}; directions are world-relative.
+ * In the first two water regions y controls depth; all positions are local units.
  * update(dt,input) accepts seconds. Call chooseMutation(id) after a mutation
  * event. Events: message {text}, stage {stage}, mutation {choices}, death
  * {cause}, victory {summary}, encounter {kind}, encounterEnd {kind}.
  */
+import { installEarlyEnvironment, hitEarlyEnvironment, earlyDamageMultiplier, updateEarlyEnemy } from './early-encounters.js';
+
 export const STAGES = [
   { name:'The Arrival', scale:'MICROSCOPIC OCEAN', setting:'Inside a fallen meteor, a new life wakes.', foods:['Drifting cells','Mineral spores'], threats:['Maw microbes','Needle cells'], boss:'The Glassjaw', objective:'Gather biomass and overcome the Glassjaw.', gate:'Open water' },
   { name:'The Living Reef', scale:'COASTAL WATERS', setting:'A sunlit reef becomes a hunting ground.', foods:['Reef grazers','Kelp clusters'], threats:['Reef hunters','Spinefish'], boss:'The Reef Sentinel', objective:'Feed in the reef and defeat its sentinel.', gate:'The continental shelf' },
@@ -28,7 +31,7 @@ const MUTATIONS = {
   volatile:{id:'volatile',name:'Unstable Organ',description:'+55% attack damage, but adds 40 instability. At 100, survive a stabilization encounter.'}
 };
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+const dist=(a,b)=>Math.hypot(a.x-b.x,(a.y||0)-(b.y||0),a.z-b.z);
 const copy=o=>JSON.parse(JSON.stringify(o));
 
 export class Game {
@@ -37,18 +40,21 @@ export class Game {
     if (saved && saved.player && Number.isInteger(saved.stage) && saved.stage>=0 && saved.stage<STAGES.length) {
       this.state=copy(saved);
       this.state.effects=[];
+      // Saves from the planar foundation contain no height field.
+      this.state.player.y = Number.isFinite(this.state.player.y) ? this.state.player.y : 0;
+      for (const e of this.state.entities || []) if (!Number.isFinite(e.y)) e.y = 0;
       // A saved choice is re-emitted by the UI using getMutationChoices().
       return;
     }
     const seed=(Date.now() ^ Math.floor(Math.random()*0xffffffff))>>>0;
-    this.state={version:1,seed,rng:seed,stage:0,time:0,mode:'playing',player:{x:0,z:12,angle:Math.PI,health:100,maxHealth:100,traits:[],speed:7,damage:13,reach:0,dodgeCooldown:0,attackCooldown:0,feedCooldown:0,abilityCooldown:0,invulnerable:0},entities:[],effects:[],sense:false,biomass:0,goal:35,stageKills:0,bossDefeated:false,mutationTaken:false,instability:0,encounter:null,containmentUsed:false,gateSpawned:false,alert:0,recentFood:'foodA',discoveries:[],totalFed:0,objective:'',nextId:1,regenClock:0};
+    this.state={version:1,seed,rng:seed,stage:0,time:0,mode:'playing',player:{x:0,y:0,z:12,angle:Math.PI,health:100,maxHealth:100,traits:[],speed:7,damage:13,reach:0,dodgeCooldown:0,attackCooldown:0,feedCooldown:0,abilityCooldown:0,invulnerable:0},entities:[],effects:[],sense:false,biomass:0,goal:35,stageKills:0,bossDefeated:false,mutationTaken:false,instability:0,encounter:null,containmentUsed:false,gateSpawned:false,alert:0,recentFood:'foodA',discoveries:[],totalFed:0,objective:'',nextId:1,regenClock:0};
     this.makeStage();
   }
   emit(type,data={}) { this.onEvent(type,data); }
   random() { const s=this.state; s.rng=(Math.imul(s.rng,1664525)+1013904223)>>>0; return s.rng/4294967296; }
   entity(type,x,z,extra={}) {
     const s=this.state;
-    const base={id:s.nextId++,type,x,z,hp:1,maxHp:1,radius:0.8,telegraph:0,dead:false,phase:'idle',timer:1+this.random(),...extra};
+    const base={id:s.nextId++,type,x,y:0,z,hp:1,maxHp:1,radius:0.8,telegraph:0,dead:false,phase:'idle',timer:1+this.random(),...extra};
     s.entities.push(base); return base;
   }
   makeStage() {
@@ -56,12 +62,12 @@ export class Game {
     s.entities=[]; s.effects=[]; s.biomass=0; s.goal=35; s.stageKills=0;
     s.bossDefeated=false; s.mutationTaken=false; s.encounter=null; s.containmentUsed=false;
     s.gateSpawned=false; s.alert=0; s.regenClock=0;
-    s.player.x=0; s.player.z=12; s.player.angle=Math.PI;
+    s.player.x=0; s.player.y=0; s.player.z=12; s.player.angle=Math.PI;
     s.player.health=Math.min(s.player.maxHealth,s.player.health+(stage?18:0));
     s.objective=STAGES[stage].objective;
     // Curated central route and seeded side pockets; every layout has both foods.
     const foods=[[-7,8],[2,7],[8,3],[-4,0],[4,-5],[-10,-8],[11,-11],[-3,-15],[7,-19],[-12,-21],[14,12],[16,-3]];
-    foods.forEach(([x,z],i)=>this.entity(i%2?'foodB':'foodA',x+(this.random()-.5)*2,z+(this.random()-.5)*2,{radius:i%2?1.05:.7,value:i%2?7:5}));
+    foods.forEach(([x,z],i)=>this.entity(i%2?'foodB':'foodA',x+(this.random()-.5)*2,z+(this.random()-.5)*2,{radius:i%2?1.05:.7,value:i%2?7:5,y:stage<2?(i%4)*1.4:0}));
     this.entity('enemy',-8,-2,{hp:28,maxHp:28,radius:1.25,homeX:-8,homeZ:-2});
     this.entity('enemy',9,-15,{hp:28,maxHp:28,radius:1.25,homeX:9,homeZ:-15});
     this.entity('ranged',10,4,{hp:23,maxHp:23,radius:1,homeX:10,homeZ:4});
@@ -69,6 +75,7 @@ export class Game {
     this.entity('boss',0,-25,{hp:95,maxHp:95,radius:2.7,homeX:0,homeZ:-25,timer:2});
     // Environmental hazards have a visible windup, and are avoidable.
     for (const [x,z] of [[-15,2],[15,-20],[-4,-10]]) this.entity('obstacle',x,z,{radius:2.3,timer:2+this.random()*2});
+    installEarlyEnvironment(this);
   }
   getMutationChoices() {
     const s=this.state;
@@ -101,7 +108,7 @@ export class Game {
       const a=(i/3)*Math.PI*2;
       // Encounters can begin at the edge of a local region. Keep every anchor
       // reachable even when the triggering strike lands against a boundary.
-      this.entity('anchor',clamp(p.x+Math.cos(a)*4,-26,26),clamp(p.z+Math.sin(a)*4,-29,17),{hp:26,maxHp:26,radius:1,encounterAnchor:true});
+      this.entity('anchor',clamp(p.x+Math.cos(a)*4,-26,26),clamp(p.z+Math.sin(a)*4,-29,17),{hp:26,maxHp:26,radius:1,y:p.y||0,encounterAnchor:true});
     }
     this.emit('encounter',{kind});
     this.emit('message',{text:kind==='containment'?'CONTAINMENT: Your core is exposed. Destroy the three anchors to break free.':'INSTABILITY: Protect your exposed core. Destroy the three manifestations to stabilize.'});
@@ -118,7 +125,7 @@ export class Game {
     if(p.invulnerable>0||s.mode!=='playing')return false;
     p.health=Math.max(0,p.health-amount);p.invulnerable=.65;this.emit('damage',{});
     if(s.encounter)s.encounter.coreIntegrity=Math.max(0,s.encounter.coreIntegrity-amount*1.5);
-    s.effects.push({x:p.x,z:p.z,kind:'damage',age:0});
+    s.effects.push({x:p.x,y:p.y||0,z:p.z,kind:'damage',age:0});
     if(s.encounter && s.encounter.coreIntegrity<=0){this.die('Exposed core destroyed during '+s.encounter.kind);return true;}
     if(p.health<=0)this.die(source||'Health depleted');
     return true;
@@ -126,7 +133,9 @@ export class Game {
   die(cause) { const s=this.state;s.mode='dead';s.cause=cause;this.emit('death',{cause}); }
   hit(e,damage) {
     if(e.dead)return;
-    e.hp=Math.max(0,e.hp-damage);sfx(this.state,e.x,e.z,'hit');
+    if(hitEarlyEnvironment(this,e,damage)) return;
+    damage *= earlyDamageMultiplier(this.state,e);
+    e.hp=Math.max(0,e.hp-damage);sfx(this.state,e.x,e.z,'hit',e.y);
     if(e.hp<=0) {
       e.dead=true; e.telegraph=0;
       if(e.type==='boss') {
@@ -140,7 +149,7 @@ export class Game {
     const s=this.state,p=s.player;
     if(e.type==='gate') {
       if(s.stage===7) {
-        e.hp-=1; sfx(s,e.x,e.z,'feed');
+        e.hp-=1; sfx(s,e.x,e.z,'feed',e.y);
         this.emit('message',{text:`Absorbing the universe: ${Math.round((1-e.hp/e.maxHp)*100)}%`});
         if(e.hp<=0){e.dead=true;s.mode='victory';this.emit('victory',{summary:this.summary()});}
       } else {
@@ -151,7 +160,7 @@ export class Game {
     let value=e.value||((e.type==='boss')?12:8);
     s.biomass+=value;s.totalFed++;s.recentFood=e.type==='foodB'?'foodB':'foodA';this.emit('feed',{});
     if(p.traits.includes('adaptive'))p.health=Math.min(p.maxHealth,p.health+3);
-    e.consumed=true;e.dead=true;sfx(s,e.x,e.z,'feed');
+    e.consumed=true;e.dead=true;sfx(s,e.x,e.z,'feed',e.y);
     if(!s.discoveries.includes(STAGES[s.stage].foods[e.type==='foodB'?1:0])&&(e.type==='foodA'||e.type==='foodB'))s.discoveries.push(STAGES[s.stage].foods[e.type==='foodB'?1:0]);
     if(s.stage>=3 && s.alert===0 && s.totalFed%4===0){s.alert=1;this.emit('message',{text:'Your feeding has been detected. Nearby defenders are investigating.'});}
   }
@@ -164,22 +173,26 @@ export class Game {
     let x=Number(input.x)||0,z=Number(input.z)||0;const len=Math.hypot(x,z);
     if(len>1){x/=len;z/=len;}
     if(len>.05){p.angle=Math.atan2(x,z);p.x=clamp(p.x+x*p.speed*dt,-27,27);p.z=clamp(p.z+z*p.speed*dt,-30,18);}
+    // Vertical swimming is optional and independent of horizontal steering.
+    // The finite water column keeps targets and the follow camera in view.
+    if(s.stage<2) p.y=clamp((p.y||0)+clamp(Number(input.y)||0,-1,1)*p.speed*.7*dt,0,9);
+    else p.y=0;
     if(input.dodge&&p.dodgeCooldown<=0){
       const dx=len>.05?x:Math.sin(p.angle),dz=len>.05?z:Math.cos(p.angle);
       p.x=clamp(p.x+dx*4.8,-27,27);p.z=clamp(p.z+dz*4.8,-30,18);
       p.invulnerable=.6;p.dodgeCooldown=p.traits.includes('swift')?1.35:2;
-      sfx(s,p.x,p.z,'dodge');
+      sfx(s,p.x,p.z,'dodge',p.y);
     }
     if(input.attack&&p.attackCooldown<=0){
       p.attackCooldown=.43;this.emit('attack',{});
-      const candidates=s.entities.filter(e=>!e.dead && ['enemy','ranged','boss','anchor'].includes(e.type)&&dist(p,e)<e.radius+2.5+p.reach).sort((a,b)=>dist(p,a)-dist(p,b));
+      const candidates=s.entities.filter(e=>!e.dead && ['enemy','ranged','boss','anchor','bloom'].includes(e.type)&&dist(p,e)<e.radius+2.5+p.reach).sort((a,b)=>dist(p,a)-dist(p,b));
       if(candidates[0])this.hit(candidates[0],p.damage);
-      sfx(s,p.x,p.z,'attack');
+      sfx(s,p.x,p.z,'attack',p.y);
     }
     if(input.ability&&p.abilityCooldown<=0){
       p.abilityCooldown=8;
       for(const e of s.entities)if(!e.dead&&['enemy','ranged','boss'].includes(e.type)&&dist(p,e)<8){this.hit(e,p.damage*.65);e.slow=2.5;}
-      sfx(s,p.x,p.z,'pulse');
+      sfx(s,p.x,p.z,'pulse',p.y);
     }
     if(input.feed&&p.feedCooldown<=0){
       const candidates=s.entities.filter(e=>!e.consumed&&((['foodA','foodB'].includes(e.type)&&!e.dead)||(e.type==='gate'&&!e.dead&&!s.encounter)||(['enemy','ranged','boss'].includes(e.type)&&e.dead))&&dist(p,e)<e.radius+2.5+p.reach).sort((a,b)=>dist(p,a)-dist(p,b));
@@ -201,7 +214,7 @@ export class Game {
     const livingFood=s.entities.filter(e=>['foodA','foodB'].includes(e.type)&&!e.dead).length;
     if(livingFood<5&&s.regenClock>8){
       s.regenClock=0;const angle=this.random()*Math.PI*2,r=7+this.random()*8;
-      this.entity(this.random()<.5?'foodA':'foodB',clamp(p.x+Math.cos(angle)*r,-25,25),clamp(p.z+Math.sin(angle)*r,-27,15),{value:6});
+      this.entity(this.random()<.5?'foodA':'foodB',clamp(p.x+Math.cos(angle)*r,-25,25),clamp(p.z+Math.sin(angle)*r,-27,15),{value:6,y:s.stage<2?clamp((p.y||0)+(this.random()-.5)*4,0,8):0});
     }
     for(const e of s.entities){
       if(e.dead)continue;
@@ -221,6 +234,7 @@ export class Game {
         }
         continue;
       }
+      if(updateEarlyEnemy(this,e,dt)) continue;
       if(!['enemy','ranged','boss'].includes(e.type))continue;
       e.slow=Math.max(0,(e.slow||0)-dt);
       const d=dist(p,e), range=e.type==='boss'?11:e.type==='ranged'?12:8;
@@ -234,7 +248,7 @@ export class Game {
             const landed=this.damagePlayer(e.type==='boss'?13:7,e.type==='boss'?STAGES[s.stage].boss:STAGES[s.stage].threats[e.type==='ranged'?1:0]);
             if(landed&&e.type==='boss'&&s.stage>=3&&!s.containmentUsed&&p.health>0&&!s.encounter)this.startEncounter('containment');
           }
-          sfx(s,e.x,e.z,'enemy');e.phase='cooldown';e.timer=e.type==='boss'?2.3:2.6;e.telegraph=0;
+          sfx(s,e.x,e.z,'enemy',e.y);e.phase='cooldown';e.timer=e.type==='boss'?2.3:2.6;e.telegraph=0;
         }
       } else if(e.phase==='cooldown'){
         e.timer-=dt;if(e.timer<=0){e.phase='idle';e.timer=.7;}
@@ -252,4 +266,4 @@ export class Game {
     s.entities=s.entities.filter(e=>!e.consumed&&!(e.type==='anchor'&&e.dead));
   }
 }
-function sfx(s,x,z,kind){s.effects.push({x,z,kind,age:0});}
+function sfx(s,x,z,kind,y=0){s.effects.push({x,y:y||0,z,kind,age:0});}

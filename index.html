@@ -11,6 +11,9 @@
 <body>
   <canvas id="game" aria-label="Game world"></canvas>
   <div class="vignette" aria-hidden="true"></div>
+  <div id="stage-transition" class="stage-transition" aria-hidden="true">
+    <div class="transition-copy"><span id="transition-scale">SCALE 02 / 08</span><strong id="transition-title">The Living Reef</strong><small id="transition-setting">A sunlit reef becomes a hunting ground.</small></div>
+  </div>
 
   <main id="hud" class="hud" hidden aria-label="Game status">
     <header class="hud-header">
@@ -28,10 +31,14 @@
       <div id="status" class="objective-status">The ocean is unaware of your arrival.</div>
     </section>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <aside id="tutorial" class="tutorial" aria-label="Journey tips" hidden>
+      <div class="tutorial-heading"><span class="section-label">FIRST CONTACT <span id="tutorial-step"></span></span><button id="dismiss-tutorial" class="text-button" aria-label="Hide journey tips">HIDE ×</button></div>
+      <p id="tutorial-copy" role="status" aria-live="polite" aria-atomic="true"></p><span class="tutorial-shortcut">H TO HIDE TIPS</span>
+    </aside>
     <section id="help-panel" class="help-panel" hidden aria-label="Controls">
       <div class="section-label">FIELD GUIDE <button id="close-help" class="text-button" aria-label="Close controls">CLOSE ×</button></div>
-      <div class="help-grid"><span>Move</span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Attack</span><kbd>SPACE</kbd><span>Feed</span><kbd>E</kbd><span>Evade</span><kbd>SHIFT</kbd><span>Ability</span><kbd>Q</kbd><span>Sense</span><kbd>TAB</kbd><span>Pause</span><kbd>ESC</kbd><span>Look</span><kbd>DRAG</kbd></div>
-      <p>Feed on small life or defeated enemies to grow. Watch for attack warnings and evade before they strike. Drag the view to look around. Gamepad: left stick move, right stick look, A attack, X feed, B evade, Y pulse, LB sense, Start pause.</p>
+      <div class="help-grid"><span>Move</span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Rise / dive</span><kbd>R</kbd><kbd>F</kbd><span>Attack</span><kbd>SPACE</kbd><span>Feed</span><kbd>E</kbd><span>Evade</span><kbd>SHIFT</kbd><span>Ability</span><kbd>Q</kbd><span>Sense</span><kbd>TAB</kbd><span>Pause</span><kbd>ESC</kbd><span>Look</span><kbd>DRAG</kbd></div>
+      <p>Feed on small life or defeated enemies to grow. Watch for attack warnings and evade before they strike. Early hunters charge in a fixed direction; ranged threats mark an impact point. Strike the Glassjaw and reef sentinel during recovery for extra damage. Drag the view to look around. Rise and dive are available in the first two scales. Gamepad: left stick move, right stick look, RB rise, RT dive, A attack, X feed, B evade, Y pulse, LB sense, Start pause. Use H or the pause menu to toggle journey tips.</p><button id="show-tutorial" class="text-button">SHOW JOURNEY TIPS</button>
     </section>
     <footer class="hud-footer">
       <div class="organism-status">
@@ -41,7 +48,7 @@
         <div class="meter biomass-meter"><div id="biomass-fill" class="meter-fill"></div></div>
       </div>
       <div class="footer-center"><div class="organism-caption">ONE ORGANISM <span>·</span> INFINITE APPETITE</div><div id="hud-traits" class="trait-list">UNEVOLVED</div></div>
-      <div class="quick-controls"><div><kbd>SPACE</kbd> ATTACK <kbd>E</kbd> FEED <kbd>SHIFT</kbd> EVADE</div><div><kbd>TAB</kbd> SENSE <kbd>Q</kbd> ABILITY <kbd>ESC</kbd> PAUSE</div></div>
+      <div class="quick-controls"><div><kbd>SPACE</kbd> ATTACK <kbd>E</kbd> FEED <kbd>SHIFT</kbd> EVADE</div><div><kbd>R</kbd> RISE <kbd>F</kbd> DIVE <kbd>TAB</kbd> SENSE</div></div>
     </footer>
   </main>
 
@@ -63,7 +70,7 @@
   </section>
 
   <section id="pause-screen" class="overlay modal-overlay" aria-labelledby="pause-title" hidden>
-    <div class="modal pause-modal"><div class="eyebrow"><span class="pulse-dot"></span> JOURNEY PAUSED</div><h2 id="pause-title">Take a <em>breath.</em></h2><p class="modal-intro">Your progress is saved on this device.</p><div class="settings"><label for="audio-volume">Audio <input id="audio-volume" type="range" min="0" max="100" value="70"></label><label for="camera-sensitivity">Camera sensitivity <input id="camera-sensitivity" type="range" min="25" max="150" value="75"></label><label class="check-label"><input id="reduce-motion" type="checkbox"> Reduce motion</label></div><div class="modal-actions"><button id="resume-game" class="primary-button">RETURN TO THE OCEAN <span>→</span></button><button id="restart-button" class="secondary-button">START A NEW LIFE</button></div><p class="pause-controls">WASD move · Space attack · E feed · Shift evade · Tab sense · Q ability</p></div>
+    <div class="modal pause-modal"><div class="eyebrow"><span class="pulse-dot"></span> JOURNEY PAUSED</div><h2 id="pause-title">Take a <em>breath.</em></h2><p class="modal-intro">Your progress is saved on this device.</p><div class="settings"><label for="audio-volume">Audio <input id="audio-volume" type="range" min="0" max="100" value="70"></label><label for="camera-sensitivity">Camera sensitivity <input id="camera-sensitivity" type="range" min="25" max="150" value="75"></label><label class="check-label"><input id="reduce-motion" type="checkbox"> Reduce motion</label></div><div class="modal-actions"><button id="resume-game" class="primary-button">RETURN TO THE OCEAN <span>→</span></button><button id="restart-button" class="secondary-button">START A NEW LIFE</button><button id="toggle-tutorial" class="secondary-button">TOGGLE JOURNEY TIPS</button></div><p class="pause-controls">WASD move · R/F rise/dive · Space attack · E feed · Shift evade · Tab sense · Q ability</p></div>
   </section>
 
   <section id="end-screen" class="overlay modal-overlay" aria-labelledby="end-title" hidden>
